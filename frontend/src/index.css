@@ -20,6 +20,8 @@
   --medium-line: #5c4322;
   --low: #8fa2b7;
   --low-bg: #1b242f;
+  --series-1: #3987e5;
+  --series-2: #d95926;
   --shadow: 0 12px 32px rgb(0 0 0 / 0.45);
   --radius: 12px;
   color-scheme: dark;
@@ -46,6 +48,8 @@
     --medium-line: #f1d3a4;
     --low: #5d6b7a;
     --low-bg: #eef1f5;
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
     --shadow: 0 12px 32px rgb(20 30 45 / 0.14);
     color-scheme: light;
   }
@@ -71,6 +75,8 @@
   --medium-line: #f1d3a4;
   --low: #5d6b7a;
   --low-bg: #eef1f5;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
   --shadow: 0 12px 32px rgb(20 30 45 / 0.14);
   color-scheme: light;
 }

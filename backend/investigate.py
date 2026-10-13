@@ -32,6 +32,13 @@ You get the findings of an automated investigation of one day of Windows login l
 Return ONLY JSON:
 - "headline": one sentence, under 25 words, stating what was found.
 - "summary": 3 or 4 short plain-English sentences: what happened, how we know, how far it spread. No jargon.
+  Keep attempted and successful logins apart: "accounts" and "targets" on a suspect count every attempt,
+  while "accounts_that_got_in" and "machines_reached" count only successes.
+  "accounts_whose_usual_computer_is_elsewhere" means those accounts normally work from other machines,
+  which suggests their passwords were stolen; it does not mean the attack moved to other machines.
+  Write dates in words, for example "8 October".
+  Give the counts as they are. Do not write "most", "nearly all" or "few" unless the numbers support it.
+  "times_normal" compares the suspect with other shared computers on the network, not with its own past.
 - "actions": up to 4 concrete actions in priority order, naming the specific computer and how many accounts.
 
 {"headline": "...", "summary": "...", "actions": ["..."]}"""
@@ -166,7 +173,9 @@ def investigate() -> dict:
         "suspects": suspects,
         "login_profile": profile[:6],
         "accounts_that_got_in": len(accounts),
-        "accounts_seen_on_other_computers": elsewhere,
+        # These accounts' owners normally work from other machines, so their use from
+        # the suspect points to stolen credentials. It does not mean the attack spread.
+        "accounts_whose_usual_computer_is_elsewhere": elsewhere,
         "top_accounts": accounts[:8],
         "machines_reached": targets_reached,
     }

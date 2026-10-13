@@ -47,6 +47,26 @@ export async function ask(question) {
   }
 }
 
+/**
+ * Run the one-click investigation. Returns { data } or { error }.
+ * There is no mock for this: a canned attack report would be a fabricated finding.
+ */
+export async function investigate() {
+  try {
+    const res = await fetch(`${API_BASE}/investigate`, {
+      method: "POST",
+      signal: AbortSignal.timeout(ASK_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`/investigate returned ${res.status}`);
+    const data = await res.json();
+    if (data.error || !Array.isArray(data.steps)) throw new Error(data.error || "unexpected reply");
+    return { data };
+  } catch (err) {
+    console.warn("[LogWhisperer] /investigate failed:", err.message);
+    return { error: "The investigation could not run. Check that the backend is up, then try again." };
+  }
+}
+
 /** True when the backend answers its health check. */
 export async function backendIsUp() {
   try {

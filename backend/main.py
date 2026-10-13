@@ -11,6 +11,7 @@ from backend.analysis import analyze
 from backend.timeline import build_timeline
 from backend.guild_client import start_guild_run
 from backend.investigate import investigate
+from backend.scoring import score_investigation
 
 MAX_ROWS = 50
 GUILD_WAIT_SECONDS = 5
@@ -126,6 +127,12 @@ def run_investigation():
         print(f"[investigate] ERROR after {time.time() - t0:.2f}s: {e!r}", flush=True)
         traceback.print_exc()
         return {"error": "The investigation could not finish. Try again in a moment."}
+    try:
+        # Added after the investigation is complete; the labels never influence it.
+        response["scorecard"] = score_investigation(response)
+    except Exception as e:
+        print(f"[investigate] scorecard skipped: {e!r}", flush=True)
+        response["scorecard"] = None
     print(f"[investigate] {len(response['suspects'])} suspect(s) | total {time.time() - t0:.2f}s", flush=True)
     _cache["/investigate"] = (time.time() + CACHE_SECONDS, response)
     return response

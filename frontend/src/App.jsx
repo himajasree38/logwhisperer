@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ask, backendIsUp } from "./api.js";
+import { ask, backendIsUp, investigate } from "./api.js";
 import { useVoice } from "./useVoice.js";
 import { HISTORY_KEY, MaskProvider, maskFor, useSettings } from "./settings.js";
 import { briefingText, setPreferredVoice, speak, stopSpeaking } from "./speech.js";
@@ -7,6 +7,8 @@ import Answer from "./components/Answer.jsx";
 import Timeline from "./components/Timeline.jsx";
 import PushToTalk from "./components/PushToTalk.jsx";
 import Settings from "./components/Settings.jsx";
+import Investigation from "./components/Investigation.jsx";
+import InvestigationPanel from "./components/InvestigationPanel.jsx";
 import "./App.css";
 
 const DEMO_QUESTIONS = [
@@ -29,6 +31,7 @@ export default function App() {
   const [messages, setMessages] = useState(() => loadHistory(settings.saveHistory));
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [busyText, setBusyText] = useState("");
   const [elapsed, setElapsed] = useState(0);
   const [online, setOnline] = useState(null); // null until the first check
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -45,13 +48,16 @@ export default function App() {
   useEffect(() => setPreferredVoice(settings.voice), [settings.voice]);
 
   // The newest answer drives the right-hand panel.
-  const latest = [...messages].reverse().find((m) => m.role === "agent");
+  const latest = [...messages]
+    .reverse()
+    .find((m) => m.role === "agent" || m.role === "investigation");
 
   const send = useCallback(
     async (question) => {
       const text = question.trim();
       if (!text || busy) return;
       setDraft("");
+      setBusyText("Querying the logs and checking the results…");
       setBusy(true);
       setMessages((prev) => [...prev, { role: "user", text }]);
       const { data, isMock, error } = await ask(text);
@@ -65,6 +71,25 @@ export default function App() {
     },
     [busy]
   );
+
+  const runInvestigation = useCallback(async () => {
+    if (busy) return;
+    setBusyText("Hunting through the whole day for a compromised machine…");
+    setBusy(true);
+    setMessages((prev) => [...prev, { role: "user", text: "Investigate: is there an attacker in these logs?" }]);
+    const { data, error } = await investigate();
+    setMessages((prev) => [
+      ...prev,
+      error ? { role: "error", text: error } : { role: "investigation", data },
+    ]);
+    setBusy(false);
+    if (!error && autoSpeakRef.current) {
+      speak(
+        briefingText({ answer: `${data.headline} ${data.summary}`, next_steps: data.actions }),
+        countRef.current
+      );
+    }
+  }, [busy]);
 
   const { listening, interim, error: voiceError, start, stop } = useVoice({ onFinal: send });
 
@@ -131,7 +156,9 @@ export default function App() {
   }, []);
 
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
-  const showsRows = latest && !latest.data.timeline.length && latest.data.rows.length;
+  const investigated = latest?.role === "investigation";
+  const showsRows =
+    latest && !investigated && !latest.data.timeline.length && latest.data.rows.length;
 
   return (
     <MaskProvider value={maskFor(settings.maskNames)}>
@@ -159,6 +186,9 @@ export default function App() {
           </div>
 
           <div className="header__right">
+            <button className="btn btn--small btn--accent" onClick={runInvestigation} disabled={busy}>
+              Investigate
+            </button>
             <button className="btn btn--small" onClick={clearConversation} disabled={!messages.length || busy}>
               New chat
             </button>
@@ -188,8 +218,13 @@ export default function App() {
               {messages.length === 0 && (
                 <div className="empty">
                   <span className="empty__glow" aria-hidden="true" />
-                  <p className="empty__lead">Ask the logs a question.</p>
-                  <p className="empty__sub">Hold the mic button to speak, or pick one to start.</p>
+                  <p className="empty__lead">Find the attacker, or ask the logs a question.</p>
+                  <p className="empty__sub">
+                    Investigate hunts through the whole day with no hints. Or hold the mic and ask.
+                  </p>
+                  <button className="btn btn--send btn--hero" onClick={runInvestigation} disabled={busy}>
+                    Run an investigation
+                  </button>
                   <div className="empty__chips">
                     {DEMO_QUESTIONS.map((q) => (
                       <button key={q} className="chip chip--demo" onClick={() => send(q)}>
@@ -209,6 +244,8 @@ export default function App() {
                   <div key={i} className="bubble bubble--agent bubble--error" role="alert">
                     {msg.text}
                   </div>
+                ) : msg.role === "investigation" ? (
+                  <Investigation key={i} id={i} data={msg.data} />
                 ) : (
                   <Answer key={i} id={i} data={msg.data} isMock={msg.isMock} />
                 )
@@ -218,7 +255,7 @@ export default function App() {
                 <div className="bubble bubble--agent thinking" role="status">
                   <div className="thinking__row">
                     <span className="dots"><i /><i /><i /></span>
-                    Querying the logs and checking the results…
+                    {busyText}
                     <span className="thinking__time">{elapsed}s</span>
                   </div>
                   <div className="skeleton" aria-hidden="true"><i /><i /><i /></div>
@@ -251,8 +288,14 @@ export default function App() {
           </section>
 
           <aside className="panel panel--side">
-            <h2 className="panel__title">{showsRows ? "Query results" : "Attacker timeline"}</h2>
-            <Timeline key={messages.length} timeline={latest?.data?.timeline} rows={latest?.data?.rows} />
+            <h2 className="panel__title">
+              {investigated ? "Attack map" : showsRows ? "Query results" : "Attacker timeline"}
+            </h2>
+            {investigated ? (
+              <InvestigationPanel key={messages.length} data={latest.data} />
+            ) : (
+              <Timeline key={messages.length} timeline={latest?.data?.timeline} rows={latest?.data?.rows} />
+            )}
           </aside>
         </main>
       </div>
