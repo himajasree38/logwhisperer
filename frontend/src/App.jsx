@@ -93,9 +93,18 @@ export default function App() {
   useEffect(() => setPreferredVoice(settings.voice), [settings.voice]);
 
   // The newest answer drives the right-hand panel.
-  const latest = [...messages]
-    .reverse()
-    .find((m) => m.role === "agent" || m.role === "investigation");
+  // The side panel can show the latest investigation's map or the latest answer's
+  // results. It follows whichever is newer, and the reader can switch back.
+  const lastOf = (role) => messages.findLastIndex((m) => m.role === role);
+  const mapAt = lastOf("investigation");
+  const resultsAt = lastOf("agent");
+  const scanAt = lastOf("scan");
+  // A pick only lasts until the next message, which hands the panel back to the newest.
+  const [sidePick, setSidePick] = useState(null); // { view: "map" | "results", at: message count }
+  const side =
+    sidePick?.at === messages.length ? sidePick.view : mapAt > resultsAt ? "map" : "results";
+  const investigation = mapAt >= 0 ? messages[mapAt] : null;
+  const latest = resultsAt >= 0 ? messages[resultsAt] : null;
 
   const send = useCallback(
     async (question) => {
@@ -140,7 +149,14 @@ export default function App() {
     setBusyText("Checking every day of logins for a computer far outside normal…");
     setBusy(true);
     setMessages((prev) => [...prev, { role: "user", text: "Scan every day for signs of an attacker." }]);
-    finish(await scan(), ({ data }) => ({ role: "scan", data }));
+    const result = await scan();
+    if (finish(result, ({ data }) => ({ role: "scan", data }))) {
+      // Point the day picker at the day that stands out most, ready to investigate.
+      const worst = result.data.days
+        .filter((d) => d.suspects.length)
+        .sort((a, b) => (b.suspects[0].times_normal || 0) - (a.suspects[0].times_normal || 0))[0];
+      if (worst) setDay(worst.day);
+    }
   }, [busy, finish]);
 
   const { listening, interim, error: voiceError, start, stop } = useVoice({ onFinal: send });
@@ -217,9 +233,11 @@ export default function App() {
   }, []);
 
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
-  const investigated = latest?.role === "investigation";
-  const showsRows =
-    latest && !investigated && !latest.data.timeline.length && latest.data.rows.length;
+  const showMap = side === "map" && investigation;
+  const showsRows = latest && !latest.data.timeline.length && latest.data.rows.length;
+  const resultsTitle = showsRows ? "Query results" : "Attacker timeline";
+  // After a scan and before anything else, say how to get from the scan to a map.
+  const scanHint = scanAt > Math.max(mapAt, resultsAt);
 
   return (
     <MaskProvider value={maskFor(settings.maskNames)}>
@@ -394,13 +412,33 @@ export default function App() {
           </section>
 
           <aside className="panel panel--side">
-            <h2 className="panel__title">
-              {investigated ? "Attack map" : showsRows ? "Query results" : "Attacker timeline"}
+            <h2 className="panel__title panel__title--tabs">
+              {investigation && latest ? (
+                <>
+                  <button className={showMap ? "is-on" : ""} onClick={() => setSidePick({ view: "map", at: messages.length })}>
+                    Attack map{investigation.data.day ? ` · ${dayLabel(investigation.data.day)}` : ""}
+                  </button>
+                  <button className={showMap ? "" : "is-on"} onClick={() => setSidePick({ view: "results", at: messages.length })}>
+                    {resultsTitle}
+                  </button>
+                </>
+              ) : showMap ? (
+                `Attack map${investigation.data.day ? ` · ${dayLabel(investigation.data.day)}` : ""}`
+              ) : (
+                resultsTitle
+              )}
             </h2>
-            {investigated ? (
-              <InvestigationPanel key={messages.length} data={latest.data} />
+            {showMap ? (
+              <InvestigationPanel key={mapAt} data={investigation.data} onScan={days.length > 1 ? runScan : null} />
+            ) : scanHint ? (
+              <div className="panel__body">
+                <p className="hint">
+                  The attack map appears when you investigate a day. Days marked in red have a
+                  suspect: click <strong>Investigate</strong> on one of them.
+                </p>
+              </div>
             ) : (
-              <Timeline key={messages.length} timeline={latest?.data?.timeline} rows={latest?.data?.rows} />
+              <Timeline key={resultsAt} timeline={latest?.data?.timeline} rows={latest?.data?.rows} />
             )}
           </aside>
         </main>

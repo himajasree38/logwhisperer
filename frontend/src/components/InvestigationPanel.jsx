@@ -11,14 +11,22 @@ const VIEWS = [
 ];
 
 /** Right-hand panel for an investigation: the map and chart, or the same data as tables. */
-export default function InvestigationPanel({ data }) {
+export default function InvestigationPanel({ data, onScan }) {
   const mask = useMask();
   const [view, setView] = useState("map");
 
   if (!data.suspects.length) {
     return (
       <div className="panel__body">
-        <p className="hint">No computer stood out, so there is nothing to map.</p>
+        <p className="hint">
+          Nothing to map for this day: no computer stood far enough outside normal to be a suspect.
+          The map appears for days that have one.
+        </p>
+        {onScan && (
+          <button className="btn btn--small btn--accent" onClick={onScan}>
+            Scan all days to find them
+          </button>
+        )}
       </div>
     );
   }
