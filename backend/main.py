@@ -10,6 +10,7 @@ from backend.query_agent import answer_with_sql
 from backend.analysis import analyze
 from backend.timeline import build_timeline
 from backend.guild_client import start_guild_run
+from backend.investigate import investigate
 
 MAX_ROWS = 50
 GUILD_WAIT_SECONDS = 5
@@ -110,6 +111,24 @@ def _answer(question: str) -> dict:
 @app.get("/health")
 def health():
     return {"ok": True}
+
+@app.post("/investigate")
+def run_investigation():
+    """Hunt for a compromised machine with no question. Cached like /ask; errors are not."""
+    hit = _cache.get("/investigate")
+    if hit and hit[0] > time.time():
+        print("[investigate] cache hit", flush=True)
+        return hit[1]
+    t0 = time.time()
+    try:
+        response = investigate()
+    except Exception as e:
+        print(f"[investigate] ERROR after {time.time() - t0:.2f}s: {e!r}", flush=True)
+        traceback.print_exc()
+        return {"error": "The investigation could not finish. Try again in a moment."}
+    print(f"[investigate] {len(response['suspects'])} suspect(s) | total {time.time() - t0:.2f}s", flush=True)
+    _cache["/investigate"] = (time.time() + CACHE_SECONDS, response)
+    return response
 
 @app.post("/ask")
 def ask(req: AskRequest):

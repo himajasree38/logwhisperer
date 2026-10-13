@@ -1,15 +1,23 @@
-import os, re, time, datetime
+import os, re, time, datetime, threading
 import clickhouse_connect
 from dotenv import load_dotenv
 
 load_dotenv()
 
-_client = clickhouse_connect.get_client(
-    host=os.getenv("CLICKHOUSE_HOST"),
-    username=os.getenv("CLICKHOUSE_RO_USER"),
-    password=os.getenv("CLICKHOUSE_RO_PASSWORD"),
-    secure=True,
-)
+MAX_QUERY_SECONDS = 30
+_local = threading.local()
+
+def _client():
+    """One read-only client per thread: a ClickHouse session cannot run two queries at once,
+    and the web server answers each request on its own thread."""
+    if not hasattr(_local, "client"):
+        _local.client = clickhouse_connect.get_client(
+            host=os.getenv("CLICKHOUSE_HOST"),
+            username=os.getenv("CLICKHOUSE_RO_USER"),
+            password=os.getenv("CLICKHOUSE_RO_PASSWORD"),
+            secure=True,
+        )
+    return _local.client
 
 def clean_sql(text: str) -> str:
     """Remove ```sql fences, extra spaces, and a trailing semicolon."""
@@ -28,7 +36,7 @@ def run_sql(query: str, max_rows: int = 100) -> dict:
         sql = f"{sql}\nLIMIT {max_rows}"
 
     start = time.time()
-    result = _client.query(sql)
+    result = _client().query(sql, settings={"max_execution_time": MAX_QUERY_SECONDS})
     ms = round((time.time() - start) * 1000)
 
     rows = []

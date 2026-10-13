@@ -1,0 +1,37 @@
+{
+  "date": "2026-10-12",
+  "logins_in_dataset": 19374688,
+  "model": "moonshotai/Kimi-K3",
+  "scores": {
+    "computers": {
+      "flagged": 1,
+      "real": 1,
+      "correct": 1,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    "accounts": {
+      "flagged": 49,
+      "real": 45,
+      "correct": 45,
+      "precision": 0.918,
+      "recall": 1.0
+    },
+    "events": {
+      "flagged": 328,
+      "real": 261,
+      "correct": 261,
+      "precision": 0.796,
+      "recall": 1.0
+    }
+  },
+  "stats": {
+    "queries": 7,
+    "rows_scanned": 103324000,
+    "query_ms": 9030,
+    "seconds": 29.4
+  },
+  "report_written_by_model": true,
+  "headline": "One computer, C17693, used 135 accounts to attack 311 machines in a single day, breaking in with 49 accounts across 210 machines.",
+  "summary": "A single computer, C17693, spent the day trying to log into other machines using 135 different accounts, reaching about 8.6 times more machines than normal. The pattern looks like password guessing: 198 attempts failed before others started succeeding. In the end, 49 accounts logged in successfully and reached 210 different machines. Those same 49 accounts also showed up on other computers, so the problem may already extend beyond this one machine."
+}

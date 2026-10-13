@@ -1,14 +1,7 @@
-import os, re, json
-from openai import OpenAI
-from dotenv import load_dotenv
-
-load_dotenv()
-
-client = OpenAI(base_url=os.getenv("AKASHML_BASE_URL"), api_key=os.getenv("AKASHML_API_KEY"))
-MODEL = os.getenv("AKASHML_MODEL")
+import json
+from backend.llm import ask_json
 
 MAX_ROWS = 30
-MAX_TOKENS = 700
 RISKS = ("low", "medium", "high")
 
 ANALYZE_SYSTEM = """You are a security investigator reviewing Windows authentication logs from a company network.
@@ -33,63 +26,16 @@ Fields, in this order:
 Keep your reasoning brief. Return ONLY JSON: {"answer": "...", "risk": "...", "next_steps": ["..."], "findings": ["..."]}"""
 
 
-def _first_json(text: str):
-    start = (text or "").find("{")
-    if start == -1:
-        return None
-    try:
-        obj, _ = json.JSONDecoder().raw_decode(text[start:])
-    except ValueError:
-        return None
-    return obj if isinstance(obj, dict) else None
-
-def _salvage(text: str) -> dict:
-    """Pull complete fields out of JSON that was cut off mid-reply."""
-    data = {}
-    for key, pattern in (("answer", r'"answer"\s*:\s*("(?:[^"\\]|\\.)*")'),
-                         ("risk", r'"risk"\s*:\s*("(?:[^"\\]|\\.)*")'),
-                         ("next_steps", r'"next_steps"\s*:\s*(\[[^\]]*\])'),
-                         ("findings", r'"findings"\s*:\s*(\[[^\]]*\])')):
-        match = re.search(pattern, text)
-        if match:
-            try:
-                data[key] = json.loads(match.group(1))
-            except ValueError:
-                pass
-    return data
-
-def _ask(system: str, payload: dict):
-    try:
-        r = client.chat.completions.create(
-            model=MODEL,
-            temperature=0,
-            max_tokens=MAX_TOKENS,
-            messages=[{"role": "system", "content": system},
-                      {"role": "user", "content": json.dumps(payload, default=str)}],
-        )
-    except Exception as e:
-        print(f"[analyze] WARNING: AkashML call failed: {e!r}", flush=True)
-        return None
-    choice = r.choices[0]
-    text = choice.message.content or ""
-    if not text.strip():
-        print(f"[analyze] WARNING: empty reply (finish_reason={choice.finish_reason}); using safe defaults",
-              flush=True)
-        return None
-    data = _first_json(text)
-    if data is None:
-        print(f"[analyze] WARNING: invalid JSON (finish_reason={choice.finish_reason}); "
-              f"salvaging complete fields", flush=True)
-        data = _salvage(text)
-    return data
-
 def _str_list(value, limit: int) -> list:
     if not isinstance(value, list):
         return []
     return [str(v).strip() for v in value if str(v).strip()][:limit]
 
 def analyze(question: str, sql: str, rows: list) -> dict:
-    data = _ask(ANALYZE_SYSTEM, {"question": question, "sql": sql, "rows": rows[:MAX_ROWS]}) or {}
+    payload = {"question": question, "sql": sql, "rows": rows[:MAX_ROWS]}
+    data = ask_json([{"role": "system", "content": ANALYZE_SYSTEM},
+                     {"role": "user", "content": json.dumps(payload, default=str)}],
+                    tag="analyze", required=("answer", "risk")) or {}
 
     risk = str(data.get("risk", "")).strip().lower()
     findings = _str_list(data.get("findings"), 10)

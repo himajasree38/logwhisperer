@@ -1,16 +1,10 @@
-import os, json
+import json
 from pathlib import Path
-from openai import OpenAI
-from dotenv import load_dotenv
 from backend.db import run_sql
+from backend.llm import ask_json
 
-load_dotenv()
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA = (ROOT / "prompts" / "schema_notes.md").read_text()
-
-client = OpenAI(base_url=os.getenv("AKASHML_BASE_URL"), api_key=os.getenv("AKASHML_API_KEY"))
-MODEL = os.getenv("AKASHML_MODEL")
-MAX_TOKENS = 500
 
 OFF_TOPIC = {"sql": None, "columns": [], "rows": [], "stats": {"rows_scanned": 0, "query_ms": 0}}
 
@@ -43,22 +37,10 @@ Q: What's a good recipe for pancakes?
 
 def _ask_model(messages):
     """Return the SQL string, or None if the model said the question is off-topic."""
-    r = client.chat.completions.create(model=MODEL, messages=messages, temperature=0,
-                                       max_tokens=MAX_TOKENS)
-    choice = r.choices[0]
-    text = choice.message.content or ""
-    if not text.strip():
-        print(f"[query] WARNING: empty reply (finish_reason={choice.finish_reason})", flush=True)
-        raise ValueError("Model returned an empty reply.")
-    start = text.find("{")
-    if start != -1:
-        try:
-            obj, _ = json.JSONDecoder().raw_decode(text[start:])
-            if "sql" in obj:
-                return obj["sql"]
-        except Exception:
-            pass
-    return text  # fallback: treat the whole reply as SQL
+    data = ask_json(messages, tag="query", required=("sql",))
+    if data is None:
+        raise ValueError("Model did not return a query.")
+    return data["sql"]
 
 def _run(sql):
     return dict(OFF_TOPIC) if sql is None else run_sql(sql)
