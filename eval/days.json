@@ -1,0 +1,274 @@
+{
+  "date": "2026-10-13",
+  "table": "auth_logs_v2",
+  "model": "moonshotai/Kimi-K3",
+  "design_day": "2026-10-08",
+  "summary": {
+    "days": 16,
+    "logins": 277999076,
+    "days_with_red_team": 11,
+    "days_caught": 2,
+    "quiet_days": 5,
+    "days_with_false_alarm": 0,
+    "red_team_logins": 649,
+    "red_team_logins_found": 465,
+    "unseen_days_caught": 1
+  },
+  "scan_stats": {
+    "rows_scanned": 277999076,
+    "query_ms": 22560,
+    "seconds": 22.6
+  },
+  "days": [
+    {
+      "day": "2026-09-30",
+      "logins": 15740768,
+      "seen_during_design": false,
+      "red_team_events": 0,
+      "red_team_computers": [],
+      "suspects": [],
+      "investigation": null
+    },
+    {
+      "day": "2026-10-01",
+      "logins": 17562411,
+      "seen_during_design": false,
+      "red_team_events": 10,
+      "red_team_computers": [
+        "C17693"
+      ],
+      "suspects": [],
+      "investigation": null
+    },
+    {
+      "day": "2026-10-02",
+      "logins": 15585892,
+      "seen_during_design": false,
+      "red_team_events": 15,
+      "red_team_computers": [
+        "C17693",
+        "C18025"
+      ],
+      "suspects": [],
+      "investigation": null
+    },
+    {
+      "day": "2026-10-03",
+      "logins": 13473124,
+      "seen_during_design": false,
+      "red_team_events": 0,
+      "red_team_computers": [],
+      "suspects": [],
+      "investigation": null
+    },
+    {
+      "day": "2026-10-04",
+      "logins": 13398148,
+      "seen_during_design": false,
+      "red_team_events": 0,
+      "red_team_computers": [],
+      "suspects": [],
+      "investigation": null
+    },
+    {
+      "day": "2026-10-05",
+      "logins": 18557382,
+      "seen_during_design": false,
+      "red_team_events": 21,
+      "red_team_computers": [
+        "C17693",
+        "C19932"
+      ],
+      "suspects": [],
+      "investigation": null
+    },
+    {
+      "day": "2026-10-06",
+      "logins": 19381578,
+      "seen_during_design": false,
+      "red_team_events": 3,
+      "red_team_computers": [
+        "C17693",
+        "C19932"
+      ],
+      "suspects": [],
+      "investigation": null
+    },
+    {
+      "day": "2026-10-07",
+      "logins": 19394283,
+      "seen_during_design": false,
+      "red_team_events": 1,
+      "red_team_computers": [
+        "C19932"
+      ],
+      "suspects": [],
+      "investigation": null
+    },
+    {
+      "day": "2026-10-08",
+      "logins": 19374688,
+      "seen_during_design": true,
+      "red_team_events": 261,
+      "red_team_computers": [
+        "C17693"
+      ],
+      "suspects": [
+        {
+          "computer": "C17693",
+          "accounts": 135,
+          "targets": 311,
+          "times_normal": 8.6
+        }
+      ],
+      "investigation": {
+        "scores": {
+          "computers": {
+            "flagged": 1,
+            "real": 1,
+            "correct": 1,
+            "precision": 1.0,
+            "recall": 1.0
+          },
+          "accounts": {
+            "flagged": 49,
+            "real": 45,
+            "correct": 45,
+            "precision": 0.918,
+            "recall": 1.0
+          },
+          "events": {
+            "flagged": 328,
+            "real": 261,
+            "correct": 261,
+            "precision": 0.796,
+            "recall": 1.0
+          }
+        },
+        "stats": {
+          "queries": 7,
+          "rows_scanned": 102826421,
+          "query_ms": 4848,
+          "seconds": 30.9
+        },
+        "headline": "On 8 October, computer C17693 used dozens of accounts, 49 successfully, to log into 210 machines across the network."
+      }
+    },
+    {
+      "day": "2026-10-09",
+      "logins": 18141723,
+      "seen_during_design": false,
+      "red_team_events": 5,
+      "red_team_computers": [
+        "C22409"
+      ],
+      "suspects": [],
+      "investigation": null
+    },
+    {
+      "day": "2026-10-10",
+      "logins": 14170694,
+      "seen_during_design": false,
+      "red_team_events": 0,
+      "red_team_computers": [],
+      "suspects": [],
+      "investigation": null
+    },
+    {
+      "day": "2026-10-11",
+      "logins": 14012543,
+      "seen_during_design": false,
+      "red_team_events": 0,
+      "red_team_computers": [],
+      "suspects": [],
+      "investigation": null
+    },
+    {
+      "day": "2026-10-12",
+      "logins": 19870848,
+      "seen_during_design": false,
+      "red_team_events": 207,
+      "red_team_computers": [
+        "C17693",
+        "C19932",
+        "C22409"
+      ],
+      "suspects": [
+        {
+          "computer": "C17693",
+          "accounts": 62,
+          "targets": 160,
+          "times_normal": 3.9
+        }
+      ],
+      "investigation": {
+        "scores": {
+          "computers": {
+            "flagged": 1,
+            "real": 3,
+            "correct": 1,
+            "precision": 1.0,
+            "recall": 0.333
+          },
+          "accounts": {
+            "flagged": 39,
+            "real": 39,
+            "correct": 37,
+            "precision": 0.949,
+            "recall": 0.949
+          },
+          "events": {
+            "flagged": 283,
+            "real": 207,
+            "correct": 204,
+            "precision": 0.721,
+            "recall": 0.986
+          }
+        },
+        "stats": {
+          "queries": 7,
+          "rows_scanned": 104060322,
+          "query_ms": 5060,
+          "seconds": 20.5
+        },
+        "headline": "Computer C17693 used 39 apparently stolen passwords to log into 133 machines on 12 October, far beyond normal activity."
+      }
+    },
+    {
+      "day": "2026-10-13",
+      "logins": 20807377,
+      "seen_during_design": false,
+      "red_team_events": 75,
+      "red_team_computers": [
+        "C17693",
+        "C19932",
+        "C22409"
+      ],
+      "suspects": [],
+      "investigation": null
+    },
+    {
+      "day": "2026-10-14",
+      "logins": 20105363,
+      "seen_during_design": false,
+      "red_team_events": 25,
+      "red_team_computers": [
+        "C17693"
+      ],
+      "suspects": [],
+      "investigation": null
+    },
+    {
+      "day": "2026-10-15",
+      "logins": 18422254,
+      "seen_during_design": false,
+      "red_team_events": 26,
+      "red_team_computers": [
+        "C17693",
+        "C19932"
+      ],
+      "suspects": [],
+      "investigation": null
+    }
+  ]
+}

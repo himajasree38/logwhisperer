@@ -16,6 +16,8 @@ Turn the user's question into ONE ClickHouse SELECT query on table auth_logs.
 Rules:
 - Return ONLY JSON: {{"sql": "<one SELECT query>"}}
 - If the question is not about logins, accounts, computers, or security in these logs, return {{"sql": null}}.
+- A follow-up may refer to an earlier turn ("that account", "those computers", "and after that?").
+  Resolve it from the earlier questions and answers, and write the names out in the query.
 - Never use the is_attack column.
 - Always include ORDER BY and LIMIT (max 100).
 - Prefer returning user, computers, counts, and timestamps so results can be explained.
@@ -45,10 +47,34 @@ def _ask_model(messages):
 def _run(sql):
     return dict(OFF_TOPIC) if sql is None else run_sql(sql)
 
-def answer_with_sql(question: str) -> dict:
-    """Run the question as SQL. result["sql"] is None when the question is off-topic."""
-    messages = [{"role": "system", "content": SYSTEM},
-                {"role": "user", "content": question}]
+MAX_HISTORY = 3
+
+def _context(day, days) -> str:
+    """Tell the model which day the analyst is looking at, when the data spans several."""
+    if not day:
+        return ""
+    span = f" The table holds {days[0]} to {days[-1]}." if days else ""
+    return (f"\n\nThe analyst is looking at {day}.{span} Unless the question names another date or a "
+            f"range, add toDate(timestamp) = '{day}' to the query. \"Yesterday\", \"today\", "
+            f"\"overnight\" and \"last night\" all mean {day}.")
+
+def answer_with_sql(question: str, day: str = None, days: list = None, history: list = None) -> dict:
+    """Run the question as SQL. result["sql"] is None when the question is off-topic.
+
+    `history` is earlier turns as {"question", "sql", "answer"}, oldest first, so a
+    follow-up such as "what did that account do next?" can be resolved.
+    """
+    messages = [{"role": "system", "content": SYSTEM + _context(day, days)}]
+    turns = [t for t in (history or [])[-MAX_HISTORY:] if t.get("question") and t.get("sql")]
+    for turn in turns:
+        messages.append({"role": "user", "content": str(turn["question"])[:500]})
+        messages.append({"role": "assistant", "content": json.dumps({"sql": str(turn["sql"])[:2000]})})
+    answers = [str(t["answer"])[:600] for t in turns if t.get("answer")]
+    if answers:
+        question = ("What the earlier queries found, in order:\n"
+                    + "\n".join(f"{i}. {a}" for i, a in enumerate(answers, 1))
+                    + f"\n\nNew question: {question}")
+    messages.append({"role": "user", "content": question})
     sql = _ask_model(messages)
     try:
         return _run(sql)

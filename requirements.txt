@@ -1,7 +1,9 @@
-pandas
-pyarrow
-clickhouse-connect
 fastapi
 uvicorn
-openai-agents
+clickhouse-connect
+openai
 python-dotenv
+
+# Only for the original one-day loading scripts (slice_auth*, label_and_convert, load_clickhouse)
+pandas
+pyarrow

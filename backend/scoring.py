@@ -1,9 +1,9 @@
-"""Score an investigation against LANL's red-team labels.
+"""Score investigations against LANL's red-team labels.
 
 Runs only after an investigation has finished. This is the one place in the
 backend that reads is_attack, and nothing here is ever sent to a model.
 """
-from backend.db import _client
+from backend.db import _client, TABLE, valid_day
 from backend.investigate import REMOTE_HUMAN, _in_list
 
 
@@ -18,10 +18,13 @@ def _set(sql: str) -> set:
 
 
 def score_investigation(result: dict) -> dict:
-    """Compare what the investigation flagged with what the red team really did."""
-    real_computers = _set("SELECT DISTINCT src_comp FROM auth_logs WHERE is_attack = 1")
-    real_accounts = _set("SELECT DISTINCT src_user FROM auth_logs WHERE is_attack = 1")
-    real_events = _client().query("SELECT count() FROM auth_logs WHERE is_attack = 1").result_rows[0][0]
+    """Compare what one investigation flagged with what the red team really did in its scope."""
+    day = result.get("day")
+    scope = f"toDate(timestamp) = '{day}' AND " if valid_day(day) else ""
+    real_computers = _set(f"SELECT DISTINCT src_comp FROM {TABLE} WHERE {scope}is_attack = 1")
+    real_accounts = _set(f"SELECT DISTINCT src_user FROM {TABLE} WHERE {scope}is_attack = 1")
+    real_events = _client().query(
+        f"SELECT count() FROM {TABLE} WHERE {scope}is_attack = 1").result_rows[0][0]
 
     suspects = {s["computer"] for s in result["suspects"]}
     accounts = {a["account"] for a in result["accounts"]}
@@ -30,7 +33,7 @@ def score_investigation(result: dict) -> dict:
     flagged_events = correct_events = 0
     if suspects:
         flagged_events, correct_events = _client().query(
-            f"SELECT count(), sum(is_attack) FROM auth_logs WHERE src_comp IN ({_in_list(suspects)}) "
+            f"SELECT count(), sum(is_attack) FROM {TABLE} WHERE {scope}src_comp IN ({_in_list(suspects)}) "
             f"AND {REMOTE_HUMAN} AND result = 'Success'").result_rows[0]
 
     return {
@@ -38,3 +41,12 @@ def score_investigation(result: dict) -> dict:
         "accounts": _score(len(accounts), len(real_accounts), len(accounts & real_accounts)),
         "events": _score(int(flagged_events), int(real_events), int(correct_events)),
     }
+
+
+def attack_days() -> dict:
+    """day -> {"events": n, "computers": [...]} for every day with red-team activity."""
+    rows = _client().query(
+        f"SELECT toDate(timestamp) AS day, count() AS events, groupUniqArray(src_comp) AS computers "
+        f"FROM {TABLE} WHERE is_attack = 1 GROUP BY day ORDER BY day").result_rows
+    return {str(day)[:10]: {"events": int(events), "computers": sorted(computers)}
+            for day, events, computers in rows}

@@ -1,186 +1,187 @@
-# 🔎 LogWhisperer
+# LogWhisperer
 
-**An AI security analyst you can talk to.**
+**An AI security analyst that hunts through login logs with no hints, shows its work, and is scored against a real attack.**
 
-Ask questions about your security logs in plain English, by voice or text, and get a clear answer in seconds: what happened, how risky it is, and what to do next. Every answer shows the exact SQL behind it, so nothing is a black box.
+Point it at 278 million real logins from Los Alamos National Laboratory and click one button. It learns what normal looks like, finds the computer an attacker was working from, lists the accounts they stole, and maps every machine they reached. Then it tells you, in plain English, what to do about it. You can also just ask it questions, by voice or by typing.
 
-> **You:** "What did computer C17693 do yesterday, in time order?"
->
-> **LogWhisperer:** "Yesterday morning, computer C17693 logged into many other computers using at least ten different people's accounts, all within about 90 minutes. One computer using that many different accounts is a strong sign of an attacker moving through the network. This needs urgent investigation."
->
-> **Risk:** 🔴 High · **Scanned:** 6.1M rows in 235 ms
+![An investigation: the report, its scorecard against the real attack, and the attack map](docs/investigation.png)
 
-Built in one day at the **Cyberdefense Hackathon** (October 9, 2026, San Francisco) for the **Attack Intelligence** track.
-<img width="1490" height="840" alt="image" src="https://github.com/user-attachments/assets/3ff36829-1ae6-4c86-9bf8-b359156e568f" />
+## Results
 
----
+The LANL dataset includes labels for what its red team really did. LogWhisperer never reads them while investigating, so they work as an answer key. Every number below comes from a script in this repo that you can re-run.
 
-## 🚨 The problem
+**One-click investigation, 8 October (19.4 million logins)**
 
-Attacks leave clues in logs, but most teams find them too late.
-
-- **Too much data.** A mid-size company produces millions of login events a day. One day of logs in our demo is 19.4 million rows.
-- **Hard to ask.** Getting one answer usually needs SQL or a special query language, plus knowing which table holds what.
-- **Clues are scattered.** A login, a new computer, and an unusual account can each look harmless alone.
-- **Not enough experts.** Small teams rarely have a full-time security analyst, so warning signs go unnoticed.
-
-## 💡 The solution
-
-LogWhisperer works like a security expert sitting next to you: **you ask, it searches, it explains.**
-
-1. **Ask** a question by voice or text.
-2. **Query Agent** turns it into one read-only ClickHouse SQL query.
-3. **ClickHouse** scans millions of log rows in about a second.
-4. **Analysis Agent** looks for attack patterns, rates the risk, and writes a short plain-English answer with next steps.
-5. **The app** shows the answer, risk badge, timeline, the SQL used, and query speed, and can read the answer aloud.
-6. **Guild.ai** runs the same question as a governed agent, with every step recorded in an audit log you can open.
-
-## 🧭 How it works
-
-```mermaid
-flowchart LR
-    U["🗣️ You<br/>voice or text"] --> APP["React app"]
-    APP --> API["FastAPI /ask"]
-    API --> QA["Query Agent<br/>(AkashML)"]
-    QA --> CH[("ClickHouse<br/>19.4M log rows")]
-    CH --> AN["Analysis Agent<br/>(AkashML)"]
-    AN --> API
-    API -. "same question, logged" .-> G["Guild.ai agent<br/>audit log"]
-    API --> APP
-```
-
-## 🏆 Sponsor tools and what each one does
-
-| Sponsor | Role in LogWhisperer |
-|---|---|
-| **ClickHouse** | Stores 19.4 million real authentication events and answers every query in roughly 0.2 to 2 seconds. The app shows rows scanned and query time with every answer. |
-| **Akash (AkashML)** | Runs the open-source **Kimi-K3** model that powers the Query and Analysis agents, through an OpenAI-compatible API. |
-| **Guild.ai** | Hosts the LogWhisperer agent. Agents never hold credentials, and every ClickHouse and AkashML call is recorded in a session log linked from each answer. |
-
-## ✨ Features
-
-- 🎙️ **Voice in and out:** push-to-talk questions and a spoken briefing (built into Chrome, no extra keys)
-- 🧠 **Plain-English answers** with a **risk badge** (low, medium, high) and up to 3 next steps
-- ⚡ **Speed line:** "Scanned 19.4M rows in 1.2 s" on every answer
-- 🧾 **Show SQL:** every answer reveals the exact query it ran
-- 🕒 **Timeline:** events in time order, with confirmed attack events in red
-- 🔗 **Guild audit link:** opens the recorded agent run for the same question
-- 🛡️ **Off-topic guard:** unrelated questions get a friendly message instead of a made-up answer
-- 🚀 **Caching:** repeated questions return instantly
-
-## 📊 Results
-
-We checked the agents against LANL's official red-team labels. **The agents never see these labels**; they are used only to verify answers afterward and to color confirmed attack events red in the timeline.
-
-| Demo question | Risk | What it found |
+| | Found | Also flagged, not in the labels |
 |---|---|---|
-| "Which accounts logged into the most different computers yesterday?" | Medium | 5 real attacker accounts in the top 10, including U66@DOM1 and U293@DOM1 |
-| "What did computer C17693 do yesterday, in time order?" | High | 12 real attacker accounts used from the compromised computer; 25 attack events highlighted |
+| Attack computer | 1 of 1 | 0 |
+| Compromised accounts | 45 of 45 | 4 |
+| Attack logins | 261 of 261 | 67 |
 
-**Speed:** about 10 seconds for a new question end to end (ClickHouse itself takes about 1 to 2 seconds); repeated questions return in under 0.1 seconds.
+Seven read-only queries, about 6 seconds in ClickHouse, 15 to 25 seconds end to end.
 
-The accuracy check is reproducible: `python scripts/check_accuracy.py`
-
-## 🛡️ Safe by design
-
-- **Read-only database user.** The agents connect as a ClickHouse user that can only run `SELECT` on one table.
-- **SQL guard.** Every query is checked in code: one statement only, `SELECT` or `WITH` only, with an automatic row limit. A `DROP TABLE` attempt is blocked.
-- **Ground truth stays hidden.** The `is_attack` labels are never shown to the agents. Only the accuracy script and the display-only label lookup read them, after the answer is written.
-- **Keys stay on the server.** No API key ever reaches the browser. Guild injects credentials server-side, so agent code never holds them.
-
-## 📁 Data
-
-We use one day (day 9) of the **LANL Comprehensive, Multi-Source Cyber-Security Events** dataset: real, anonymized authentication logs from Los Alamos National Laboratory's corporate network, recorded during a red-team exercise.
+**Sixteen-day scan (278 million logins, one query, 23 seconds)**
 
 | | |
 |---|---|
-| Rows loaded | 19,374,688 authentication events |
-| Red-team events that day | 273 (261 matched to auth rows) |
-| Attack source computer | C17693 |
-| Time handling | LANL times are seconds from the dataset start; we shifted day 9 to 2026-10-08 so questions like "yesterday" read naturally |
+| Days with a false alarm | 0 of 16 |
+| Red-team logins on the days it flagged | 465 of 649 (72%) |
+| Loud attack days caught (200+ red-team logins) | 2 of 2 |
+| Quiet attack days caught (1 to 75 red-team logins) | 0 of 9 |
 
-Instead of downloading the full 7.6 GB file, `scripts/slice_auth_stream.py` streams it and stops as soon as the chosen day ends.
+The detection rule was designed while looking at 8 October only. The other fifteen days were loaded afterwards, so they are days it had not seen. On the second loud day, 12 October, it found the same attack computer, 37 of 39 compromised accounts and 204 of 207 attack logins.
 
-## 🗂️ Project structure
+It does not catch low-and-slow activity: on nine days the red team made between 1 and 75 logins, and none of those days was flagged. That is the main thing to improve.
 
+**Question answering (27 questions, two passes)**
+
+| | Hackathon version | Now |
+|---|---|---|
+| Complete answers | 39 of 48 | 48 of 48 |
+| Same risk rating on both passes | 14 of 18 | 20 of 24 |
+| Median answer time | 12.6 s | 12.0 s |
+| Off-topic questions refused | 6 of 6 | 6 of 6 |
+
+![The sixteen-day scan, with what the red team really did on each day](docs/scan.png)
+
+## What it does
+
+**Investigate.** One click, no question. A fixed playbook of read-only queries:
+
+1. Learn what is normal: how many machines does a shared computer usually reach?
+2. Find computers far outside that norm, using many accounts to reach many machines.
+3. Profile the suspect: successes, failures, login types.
+4. List the accounts that got in. Their passwords are probably stolen.
+5. Check that those accounts normally work from other machines.
+6. Map where the suspect got in, in order.
+7. Chart its activity through the day.
+
+The model writes the report from these findings. It does not decide them, so the findings are identical on every run.
+
+**Scan.** The same outlier test on every day of data at once, to show which days need a closer look.
+
+**Ask.** Plain-English questions, typed or spoken. One agent writes a ClickHouse query, a second reads the rows, rates the risk and explains. Follow-ups such as "which accounts did that computer get in with?" work, because earlier turns are passed along.
+
+**Verify.** Every answer and every investigation step shows its SQL, how many rows ClickHouse scanned, and how long it took.
+
+![The seven steps behind a finding, and the activity chart](docs/steps-and-chart.png)
+
+## How it works
+
+```mermaid
+flowchart LR
+    U[You: click Investigate,<br/>or ask by voice or text] --> A[React app]
+    A --> B[FastAPI backend]
+    B --> P[Investigation playbook<br/>7 fixed read-only queries]
+    B --> Q[Query agent<br/>question to SQL]
+    P --> C[(ClickHouse<br/>278M logins)]
+    Q --> C
+    C --> R[Analysis agent<br/>risk, answer, report]
+    R --> A
+    B -.same question.-> G[Guild.ai agent<br/>recorded session]
+    C -.after the answer.-> S[Scorecard<br/>vs red-team labels]
+    S --> A
 ```
-logwhisperer/
-├── backend/
-│   ├── main.py            # FastAPI app: POST /ask, GET /health, cache
-│   ├── db.py              # read-only, SELECT-only ClickHouse helper with stats
-│   ├── query_agent.py     # question -> SQL (AkashML)
-│   ├── analysis.py        # risk, findings, plain-English answer (AkashML)
-│   ├── timeline.py        # rows -> readable timeline events
-│   ├── labels.py          # display-only red-team label lookup
-│   └── guild_client.py    # starts the Guild run, returns the session link
-├── frontend/              # React + Vite app (voice, answer, timeline, Show SQL)
-├── guild/                 # Guild agent source and integration specs
-├── prompts/               # schema notes, example queries, mock API response
-├── scripts/               # LANL download, slicing, labeling, loading, accuracy check
-├── .env.example           # every setting the project reads (no secrets)
-└── requirements.txt
-```
 
-## 🚀 Run it yourself
+| Part | Technology |
+|---|---|
+| Logs | ClickHouse Cloud, one table partitioned by day |
+| Model | Kimi-K3 on AkashML, through its OpenAI-compatible API |
+| Agent audit log | Guild.ai, with credentials held by Guild and never by the agent |
+| Backend | Python, FastAPI |
+| App | React, Vite, plain CSS and SVG (no chart or UI library) |
+| Voice | Browser Web Speech API, in and out |
 
-**Prerequisites:** Python 3.12, Node 18+, a ClickHouse Cloud service, an AkashML API key, and (optionally) a Guild.ai workspace.
+## Safe by design
 
-**1. Clone and install**
+- **Read-only.** The agents connect as a ClickHouse user that can only `SELECT`. The backend also rejects anything that is not a single `SELECT` and adds a row limit and a 30-second time limit.
+- **No peeking.** The attack labels are never sent to a model. They are read only after a result is complete, to mark the timeline and fill in the scorecard. `backend/scoring.py` and `backend/labels.py` are the only places that touch them.
+- **No invented answers.** Off-topic questions are refused. If the backend is down, a clearly marked mock answer is shown for questions, and investigations simply fail.
+- **Public-demo protection.** An optional passcode, a per-visitor hourly limit and a daily limit protect the model credits.
+
+## Data
+
+[LANL Comprehensive, Multi-Source Cyber-Security Events](https://csr.lanl.gov/data/cyber1/): real, anonymised Windows authentication logs from Los Alamos National Laboratory's internal network, with a red-team exercise recorded in them.
+
+- Loaded here: the first 16 of 58 days, 277,999,076 logins, with 649 logins labelled as red-team activity.
+- The events are real. The dates are shifted so the dataset's day 9 lands on 8 October 2026.
+- Of the 689 red-team events in those 16 days, 649 match a login in the authentication log exactly.
+
+## Run it yourself
+
+You need Python 3.9+, Node 18+, a ClickHouse Cloud service, and an AkashML API key. A Guild.ai workspace is optional.
+
 ```bash
-git clone https://github.com/SreenidhiHayagreevan/logwhisperer.git
-cd logwhisperer
-python -m venv .venv
-source .venv/bin/activate
+git clone https://github.com/himajasree38/logwhisperer.git
+cd logwhisperer && git checkout v2
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env            # fill in your keys
 ```
 
-**2. Configure:** copy `.env.example` to `.env` and fill in your keys.
+**Load the data.** Submit the form at [csr.lanl.gov/data/cyber1](https://csr.lanl.gov/data/cyber1/) to get a download token. ClickHouse pulls the files from LANL itself, so nothing large passes through your machine. Sixteen days takes about six minutes.
+
 ```bash
-cp .env.example .env
+python scripts/load_days.py --token <token> --days 16
 ```
 
-**3. Load the data** (download `redteam.txt.gz` and get the `auth.txt.gz` link from csr.lanl.gov/data/cyber1/)
-```bash
-python scripts/explore_redteam.py                              # find the busiest attack day
-curl -sL "AUTH_LINK" | python scripts/slice_auth_stream.py     # stream only that day
-python scripts/label_and_convert.py                            # add labels and timestamps
-python scripts/load_clickhouse.py                              # load into ClickHouse
-```
-Create the `auth_logs` table and the read-only user first (see `scripts/` and `.env.example`).
+Then set `AUTH_TABLE=auth_logs_v2` in `.env`, and create a read-only user for the agents:
 
-**4. Start the backend**
-```bash
-uvicorn backend.main:app --port 8000
+```sql
+CREATE USER agent_ro IDENTIFIED BY '<password>';
+GRANT SELECT ON auth_logs_v2 TO agent_ro;
 ```
 
-**5. Start the app** (in a new terminal)
+**Start it.**
+
 ```bash
-cd frontend
-npm install
-npm run dev
+uvicorn backend.main:app --port 8000        # backend
+cd frontend && npm install && npm run dev   # app, in a second terminal
 ```
+
 Open http://localhost:5173 in Chrome.
 
-## 💬 Try asking
+**Re-run the scorecards.**
 
-- "Which accounts logged into the most different computers yesterday?"
-- "What did computer C17693 do yesterday, in time order?"
-- "Which computers did U66@DOM1 reach, in order?"
-- "Were there logins between midnight and 5 AM?"
+```bash
+python scripts/score_investigation.py   # one investigation vs the labels   -> eval/investigation.json
+python scripts/score_days.py            # scan + investigation, every day   -> eval/days.json
+python scripts/scorecard.py --repeat 2  # 27 questions, two passes          -> eval/run.json
+```
 
-## 🔮 Limitations and next steps
+**Host it.** `Dockerfile` builds one container that serves the app and the API together. Set `APP_PASSCODE` to lock it.
 
-- One day of data today; ClickHouse can scale to the full 58-day dataset.
-- Some broad questions (for example, "most failed logins") surface noisy automated accounts and can raise false alarms.
-- Next: continuous monitoring with Slack alerts, real log sources (Okta, AWS CloudTrail, firewalls) streamed into ClickHouse, and one-click incident reports.
+## Project structure
 
-## 👥 Team
+```
+backend/
+  investigate.py   the playbook and the all-days scan
+  scoring.py       comparison with the red-team labels, after the fact
+  query_agent.py   question -> SQL, with day context and conversation history
+  analysis.py      rows -> risk, answer, next steps
+  llm.py           model calls with a retry
+  db.py            read-only ClickHouse access and its safety checks
+  main.py          API, cache, passcode and rate limits
+frontend/src/
+  components/      Investigation, AttackMap, ActivityChart, Scan, Answer, Timeline, Settings
+guild/             the Guild.ai agent and its integrations
+scripts/           data loading and the three scorecards
+eval/              saved scorecard results
+```
 
-- **Sreenidhi Hayagreevan:** data pipeline, ClickHouse, AkashML agents, backend
-- **Himaja:** React app, voice, Guild.ai agent, demo materials
+## Limitations
 
-## 🙏 Credits
+- **Low-and-slow attacks are missed.** The outlier test needs a computer to stand far outside normal on a single day. Comparing each computer with its own history is the next step.
+- **Sixteen days of one network.** The remaining 42 days of the dataset, which include more red-team days, are not loaded and would make a fair blind test for any new rule.
+- **The model words the reports.** Findings are deterministic, but the summary text varies between runs and can be loose with a detail.
+- **Risk ratings on free-form questions vary.** The same question got a different rating on 4 of 24 repeat runs.
+- **Voice input needs Chrome.**
 
-- **Dataset:** A. D. Kent, *Comprehensive, Multi-Source Cyber-Security Events*, Los Alamos National Laboratory, 2015. Released by LANL with copyright waived. Source: csr.lanl.gov/data/cyber1/
-- **Sponsors:** ClickHouse, Akash Network (AkashML), Guild.ai
-- **Event:** Cyberdefense Hackathon by tokens&, hosted at AWS Builder Loft, San Francisco Tech Week
+## Credits
+
+LogWhisperer began as a one-day project at the Cyberdefense Hackathon (tokens&, AWS Builder Loft, San Francisco, 9 October 2026), built by **Sreenidhi Hayagreevan** (data pipeline, ClickHouse, AkashML agents, backend) and **Himaja Sree** (React app, voice, Guild.ai agent). The hackathon version is on the `main` branch.
+
+This `v2` branch is Himaja's continuation: the one-click investigation and scan, the scorecards, the attack map, multi-day data, follow-up questions, and the reliability fixes.
+
+- **Dataset:** A. D. Kent, *Comprehensive, Multi-Source Cyber-Security Events*, Los Alamos National Laboratory, 2015. doi:10.17021/1179829
+- **Built with:** ClickHouse, AkashML (Akash Network), Guild.ai

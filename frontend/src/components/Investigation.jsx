@@ -16,7 +16,7 @@ export default function Investigation({ id, data }) {
     <div className="bubble bubble--agent">
       <div className="bubble__top">
         <RiskBadge risk={data.risk} />
-        <span className="chip">Investigation</span>
+        <span className="chip">Investigation{data.day ? ` · ${data.day}` : ""}</span>
       </div>
 
       <p className="answer answer--headline">{mask(data.headline)}</p>

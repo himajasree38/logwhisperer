@@ -236,6 +236,20 @@
 .score__extra { font-size: 12px; color: var(--muted); }
 .score__note { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
 
+.daypick { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); }
+.daypick .select { flex: none; padding: 4px 6px; font-size: 13px; }
+.empty__actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-bottom: 20px; }
+.empty__actions .btn--hero { margin-bottom: 0; }
+.composer--lock { border-top: 1px solid var(--medium-line); }
+
+.days { list-style: none; margin: 12px 0 0; padding: 0; }
+.days__row { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 9px 0 9px 12px; border-left: 2px solid var(--line); border-bottom: 1px solid var(--line); }
+.days__row.is-flagged { border-left-color: var(--high); background: linear-gradient(90deg, var(--high-bg), transparent 60%); }
+.days__date { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.days__finding { font-size: 14px; display: grid; gap: 1px; }
+.days__quiet { color: var(--muted); }
+.days__truth { font-size: 12px; color: var(--muted); }
+
 /* ---------- charts ---------- */
 .viz { margin: 0 0 20px; }
 .viz__title { font-size: 14px; font-weight: 600; margin-bottom: 6px; }

@@ -5,6 +5,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 MAX_QUERY_SECONDS = 30
+# Prompts, examples and saved queries all say "auth_logs". AUTH_TABLE points that name
+# at the table that really holds the data, so a bigger load needs no prompt changes.
+TABLE = os.getenv("AUTH_TABLE", "auth_logs")
+DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _local = threading.local()
 
 def _client():
@@ -35,6 +39,8 @@ def run_sql(query: str, max_rows: int = 100) -> dict:
     if not re.search(r"\bLIMIT\s+\d+", sql, flags=re.IGNORECASE):
         sql = f"{sql}\nLIMIT {max_rows}"
 
+    sql = re.sub(r"\bauth_logs\b", TABLE, sql)
+
     start = time.time()
     result = _client().query(sql, settings={"max_execution_time": MAX_QUERY_SECONDS})
     ms = round((time.time() - start) * 1000)
@@ -57,6 +63,15 @@ def run_sql(query: str, max_rows: int = 100) -> dict:
         "rows": rows,
         "stats": {"rows_scanned": rows_scanned, "query_ms": ms},
     }
+
+def valid_day(day) -> bool:
+    return isinstance(day, str) and bool(DAY_RE.match(day))
+
+def list_days() -> list:
+    """Days present in the data, oldest first, with how many logins each holds."""
+    out = run_sql("SELECT toDate(timestamp) AS day, count() AS logins FROM auth_logs "
+                  "GROUP BY day ORDER BY day LIMIT 100")
+    return [{"day": str(r["day"])[:10], "logins": r["logins"]} for r in out["rows"]]
 
 if __name__ == "__main__":
     out = run_sql("""

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ask, backendIsUp, investigate } from "./api.js";
+import { ask, backendIsUp, getDays, investigate, scan, setPasscode } from "./api.js";
 import { useVoice } from "./useVoice.js";
 import { HISTORY_KEY, MaskProvider, maskFor, useSettings } from "./settings.js";
 import { briefingText, setPreferredVoice, speak, stopSpeaking } from "./speech.js";
@@ -9,13 +9,36 @@ import PushToTalk from "./components/PushToTalk.jsx";
 import Settings from "./components/Settings.jsx";
 import Investigation from "./components/Investigation.jsx";
 import InvestigationPanel from "./components/InvestigationPanel.jsx";
+import Scan from "./components/Scan.jsx";
 import "./App.css";
 
 const DEMO_QUESTIONS = [
-  "Which accounts logged into the most different computers yesterday?",
-  "What did computer C17693 do yesterday, in time order?",
-  "Were there any failed login bursts overnight?",
+  "Which accounts logged into the most different computers that day?",
+  "Which accounts had the most failed logins that day?",
+  "Were there any logins at unusual hours, between midnight and 5 AM?",
 ];
+
+const dayLabel = (day) =>
+  new Date(`${day}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+/** Earlier answered questions, oldest first, so the backend can resolve follow-ups. */
+function conversation(messages) {
+  const turns = [];
+  messages.forEach((msg, i) => {
+    if (msg.role === "agent" && msg.data.sql && messages[i - 1]?.role === "user") {
+      turns.push({ question: messages[i - 1].text, sql: msg.data.sql, answer: msg.data.answer });
+    }
+    // An investigation counts as a turn too, so "that computer" can mean its suspect.
+    if (msg.role === "investigation" && msg.data.suspects.length) {
+      turns.push({
+        question: "Investigate this day: is there a compromised computer?",
+        sql: msg.data.steps[1]?.sql || "",
+        answer: `${msg.data.headline} ${msg.data.summary}`,
+      });
+    }
+  });
+  return turns.slice(-3);
+}
 
 function loadHistory(enabled) {
   if (!enabled) return [];
@@ -35,6 +58,11 @@ export default function App() {
   const [elapsed, setElapsed] = useState(0);
   const [online, setOnline] = useState(null); // null until the first check
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [days, setDays] = useState([]);
+  const [day, setDay] = useState("");
+  const [locked, setLocked] = useState(false); // the hosted demo asked for a passcode
+  const messagesRef = useRef(messages);
+  const dayRef = useRef(day);
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
   const countRef = useRef(messages.length);
@@ -43,7 +71,24 @@ export default function App() {
   useEffect(() => {
     countRef.current = messages.length;
     autoSpeakRef.current = settings.autoSpeak;
-  }, [messages.length, settings.autoSpeak]);
+    messagesRef.current = messages;
+    dayRef.current = day;
+  }, [messages, settings.autoSpeak, day]);
+
+  // Finish any request the same way: show the result, or the reason there is none.
+  const finish = useCallback((result, toMessage) => {
+    if (result.needsPasscode) setLocked(true);
+    setMessages((prev) => [
+      ...prev,
+      result.needsPasscode
+        ? { role: "error", text: "This demo is locked. Enter the passcode, then try again." }
+        : result.error
+          ? { role: "error", text: result.error }
+          : toMessage(result),
+    ]);
+    setBusy(false);
+    return !result.needsPasscode && !result.error;
+  }, []);
 
   useEffect(() => setPreferredVoice(settings.voice), [settings.voice]);
 
@@ -59,37 +104,44 @@ export default function App() {
       setDraft("");
       setBusyText("Querying the logs and checking the results…");
       setBusy(true);
+      const history = conversation(messagesRef.current);
       setMessages((prev) => [...prev, { role: "user", text }]);
-      const { data, isMock, error } = await ask(text);
-      setMessages((prev) => [
-        ...prev,
-        error ? { role: "error", text: error } : { role: "agent", data, isMock },
-      ]);
-      setBusy(false);
+      const result = await ask(text, { day: dayRef.current || undefined, history });
+      const ok = finish(result, ({ data, isMock }) => ({ role: "agent", data, isMock }));
       // By now the question is counted, so the answer's index (its speech id) is the count.
-      if (!error && autoSpeakRef.current) speak(briefingText(data), countRef.current);
+      if (ok && autoSpeakRef.current) speak(briefingText(result.data), countRef.current);
     },
-    [busy]
+    [busy, finish]
   );
 
-  const runInvestigation = useCallback(async () => {
+  const runInvestigation = useCallback(
+    async (chosen) => {
+      if (busy) return;
+      const target = typeof chosen === "string" ? chosen : dayRef.current;
+      if (target) setDay(target);
+      setBusyText("Hunting through the day for a compromised machine…");
+      setBusy(true);
+      setMessages((prev) => [
+        ...prev,
+        { role: "user", text: `Investigate${target ? ` ${dayLabel(target)}` : ""}: is there an attacker in these logs?` },
+      ]);
+      const result = await investigate(target || undefined);
+      const ok = finish(result, ({ data }) => ({ role: "investigation", data }));
+      if (ok && autoSpeakRef.current) {
+        const { headline, summary, actions } = result.data;
+        speak(briefingText({ answer: `${headline} ${summary}`, next_steps: actions }), countRef.current);
+      }
+    },
+    [busy, finish]
+  );
+
+  const runScan = useCallback(async () => {
     if (busy) return;
-    setBusyText("Hunting through the whole day for a compromised machine…");
+    setBusyText("Checking every day of logins for a computer far outside normal…");
     setBusy(true);
-    setMessages((prev) => [...prev, { role: "user", text: "Investigate: is there an attacker in these logs?" }]);
-    const { data, error } = await investigate();
-    setMessages((prev) => [
-      ...prev,
-      error ? { role: "error", text: error } : { role: "investigation", data },
-    ]);
-    setBusy(false);
-    if (!error && autoSpeakRef.current) {
-      speak(
-        briefingText({ answer: `${data.headline} ${data.summary}`, next_steps: data.actions }),
-        countRef.current
-      );
-    }
-  }, [busy]);
+    setMessages((prev) => [...prev, { role: "user", text: "Scan every day for signs of an attacker." }]);
+    finish(await scan(), ({ data }) => ({ role: "scan", data }));
+  }, [busy, finish]);
 
   const { listening, interim, error: voiceError, start, stop } = useVoice({ onFinal: send });
 
@@ -130,6 +182,15 @@ export default function App() {
       setElapsed(0);
     };
   }, [busy]);
+
+  // The days of data on offer; start on the most recent one.
+  useEffect(() => {
+    if (!online) return;
+    getDays().then((list) => {
+      setDays(list);
+      setDay((current) => current || list.at(-1)?.day || "");
+    });
+  }, [online]);
 
   useEffect(() => {
     let alive = true;
@@ -172,6 +233,16 @@ export default function App() {
               <span className="status__dot" aria-hidden="true" />
               {online === null ? "Checking…" : online ? "Live data" : "Backend offline"}
             </span>
+            {days.length > 1 && (
+              <label className="daypick">
+                Day
+                <select className="select" value={day} onChange={(e) => setDay(e.target.value)}>
+                  {days.map((d) => (
+                    <option key={d.day} value={d.day}>{dayLabel(d.day)}</option>
+                  ))}
+                </select>
+              </label>
+            )}
             {settings.maskNames && <span className="chip">Names masked</span>}
           </div>
 
@@ -186,8 +257,13 @@ export default function App() {
           </div>
 
           <div className="header__right">
+            {days.length > 1 && (
+              <button className="btn btn--small btn--accent" onClick={runScan} disabled={busy}>
+                Scan all days
+              </button>
+            )}
             <button className="btn btn--small btn--accent" onClick={runInvestigation} disabled={busy}>
-              Investigate
+              Investigate{day ? ` ${dayLabel(day)}` : ""}
             </button>
             <button className="btn btn--small" onClick={clearConversation} disabled={!messages.length || busy}>
               New chat
@@ -220,11 +296,24 @@ export default function App() {
                   <span className="empty__glow" aria-hidden="true" />
                   <p className="empty__lead">Find the attacker, or ask the logs a question.</p>
                   <p className="empty__sub">
-                    Investigate hunts through the whole day with no hints. Or hold the mic and ask.
+                    {days.length > 1
+                      ? `Scan all ${days.length} days with no hints, investigate one, or hold the mic and ask.`
+                      : "Investigate hunts through the logs with no hints. Or hold the mic and ask."}
                   </p>
-                  <button className="btn btn--send btn--hero" onClick={runInvestigation} disabled={busy}>
-                    Run an investigation
-                  </button>
+                  <div className="empty__actions">
+                    {days.length > 1 && (
+                      <button className="btn btn--send btn--hero" onClick={runScan} disabled={busy}>
+                        Scan all {days.length} days
+                      </button>
+                    )}
+                    <button
+                      className={`btn btn--hero ${days.length > 1 ? "btn--accent" : "btn--send"}`}
+                      onClick={runInvestigation}
+                      disabled={busy}
+                    >
+                      Investigate{day ? ` ${dayLabel(day)}` : ""}
+                    </button>
+                  </div>
                   <div className="empty__chips">
                     {DEMO_QUESTIONS.map((q) => (
                       <button key={q} className="chip chip--demo" onClick={() => send(q)}>
@@ -244,6 +333,8 @@ export default function App() {
                   <div key={i} className="bubble bubble--agent bubble--error" role="alert">
                     {msg.text}
                   </div>
+                ) : msg.role === "scan" ? (
+                  <Scan key={i} data={msg.data} onInvestigate={runInvestigation} busy={busy} />
                 ) : msg.role === "investigation" ? (
                   <Investigation key={i} id={i} data={msg.data} />
                 ) : (
@@ -264,6 +355,21 @@ export default function App() {
             </div>
 
             {voiceError && <p className="hint hint--warn composer__hint">{voiceError}</p>}
+
+            {locked && (
+              <form
+                className="composer composer--lock"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setPasscode(new FormData(e.target).get("passcode").trim());
+                  setLocked(false);
+                }}
+              >
+                <input className="composer__input" name="passcode" type="password"
+                       placeholder="Passcode for this demo" autoFocus required />
+                <button className="btn btn--send" type="submit">Unlock</button>
+              </form>
+            )}
 
             <form
               className="composer"

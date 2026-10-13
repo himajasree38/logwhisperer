@@ -8,23 +8,56 @@ const ASK_TIMEOUT_MS = 120000;
 
 import mockResponse from "../../prompts/mock_response.json";
 
+const PASSCODE_KEY = "logwhisperer.passcode";
+
+/** A hosted demo can be locked with a passcode; it is kept for this tab only. */
+export function setPasscode(code) {
+  try {
+    sessionStorage.setItem(PASSCODE_KEY, code);
+  } catch {
+    /* storage blocked: the code will have to be entered again */
+  }
+}
+
+function post(path, body) {
+  let passcode = "";
+  try {
+    passcode = sessionStorage.getItem(PASSCODE_KEY) || "";
+  } catch {
+    /* no stored code */
+  }
+  return fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(passcode && { "X-Passcode": passcode }) },
+    body: JSON.stringify(body || {}),
+    signal: AbortSignal.timeout(ASK_TIMEOUT_MS),
+  });
+}
+
+/** Turn a locked or rate-limited reply into { needsPasscode } or { error }; otherwise null. */
+async function refusal(res) {
+  if (res.status === 401) return { needsPasscode: true };
+  if (res.status === 429) {
+    const body = await res.json().catch(() => ({}));
+    return { error: body.error || "This demo is busy. Please try again later." };
+  }
+  return null;
+}
+
 /**
  * Ask the agents a question.
- * Returns { data, isMock, error }.
+ * Returns { data, isMock, error, needsPasscode }.
  * - Backend not there yet (unreachable, or no /ask route): the mock contract
  *   example, flagged with isMock so the UI can say so.
  * - Backend there but failing (5xx, bad JSON, timeout): error set, no mock — a
  *   canned answer must never stand in for a real one that went wrong.
+ * `day` scopes the question to one day; `history` carries earlier turns so
+ * follow-ups like "what did that account do next?" can be resolved.
  */
-export async function ask(question) {
+export async function ask(question, { day, history } = {}) {
   let res;
   try {
-    res = await fetch(`${API_BASE}/ask`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question }),
-      signal: AbortSignal.timeout(ASK_TIMEOUT_MS),
-    });
+    res = await post("/ask", { question, day, history });
   } catch (err) {
     if (err.name === "TimeoutError") {
       return { error: "The agents took too long to answer. Try asking again." };
@@ -37,6 +70,8 @@ export async function ask(question) {
     console.warn(`[LogWhisperer] no /ask route yet (${res.status}), using mock`);
     return { data: normalize(mockResponse), isMock: true };
   }
+  const refused = await refusal(res);
+  if (refused) return refused;
 
   try {
     if (!res.ok) throw new Error(`/ask returned ${res.status}`);
@@ -47,23 +82,42 @@ export async function ask(question) {
   }
 }
 
-/**
- * Run the one-click investigation. Returns { data } or { error }.
- * There is no mock for this: a canned attack report would be a fabricated finding.
- */
-export async function investigate() {
+/** Shared by the investigation and the scan: POST, then check the reply has `field`. */
+async function run(path, body, field, failure) {
   try {
-    const res = await fetch(`${API_BASE}/investigate`, {
-      method: "POST",
-      signal: AbortSignal.timeout(ASK_TIMEOUT_MS),
-    });
-    if (!res.ok) throw new Error(`/investigate returned ${res.status}`);
+    const res = await post(path, body);
+    const refused = await refusal(res);
+    if (refused) return refused;
+    if (!res.ok) throw new Error(`${path} returned ${res.status}`);
     const data = await res.json();
-    if (data.error || !Array.isArray(data.steps)) throw new Error(data.error || "unexpected reply");
+    if (data.error || !Array.isArray(data[field])) throw new Error(data.error || "unexpected reply");
     return { data };
   } catch (err) {
-    console.warn("[LogWhisperer] /investigate failed:", err.message);
-    return { error: "The investigation could not run. Check that the backend is up, then try again." };
+    console.warn(`[LogWhisperer] ${path} failed:`, err.message);
+    return { error: failure };
+  }
+}
+
+/**
+ * Run the one-click investigation, for one day or for all the data.
+ * There is no mock for this: a canned attack report would be a fabricated finding.
+ */
+export const investigate = (day) =>
+  run("/investigate", { day }, "steps",
+    "The investigation could not run. Check that the backend is up, then try again.");
+
+/** Run the outlier test across every day of data. */
+export const scan = () =>
+  run("/scan", {}, "days", "The scan could not run. Check that the backend is up, then try again.");
+
+/** Days of data available, oldest first: [{ day, logins }]. Empty if the backend is down. */
+export async function getDays() {
+  try {
+    const res = await fetch(`${API_BASE}/days`, { signal: AbortSignal.timeout(8000) });
+    const body = await res.json();
+    return Array.isArray(body.days) ? body.days : [];
+  } catch {
+    return [];
   }
 }
 

@@ -13,7 +13,7 @@ The model writes the report from these findings; it does not decide them, so the
 result is the same on every run. The red-team labels are never read here.
 """
 import json, time
-from backend.db import run_sql
+from backend.db import run_sql, valid_day
 from backend.llm import ask_json
 
 # A "shared" source is one used by several people's accounts to reach other machines.
@@ -24,7 +24,8 @@ MAX_SUSPECTS = 3
 MAX_EDGES = 400
 
 # Remote logins by people's accounts: the traffic lateral movement shows up in.
-REMOTE_HUMAN = "src_comp != dst_comp AND src_user LIKE 'U%'"
+_REMOTE_HUMAN = "src_comp != dst_comp AND src_user LIKE 'U%'"
+REMOTE_HUMAN = _REMOTE_HUMAN   # unscoped form, used by the scorer
 
 REPORT_SYSTEM = """You are a security analyst writing an incident summary for a small team with no security specialist.
 You get the findings of an automated investigation of one day of Windows login logs. Use only those findings.
@@ -84,15 +85,21 @@ def _template_report(suspects: list, accounts: list, targets: int) -> dict:
     }
 
 
-def investigate() -> dict:
+def investigate(day: str = None) -> dict:
+    """Investigate one day (YYYY-MM-DD), or everything loaded when no day is given."""
     started = time.time()
     steps = _Steps()
+    if day is not None and not valid_day(day):
+        raise ValueError("day must look like 2026-10-08")
+    # Every query below is limited to the day being investigated.
+    remote = f"toDate(timestamp) = '{day}' AND {_REMOTE_HUMAN}" if day else _REMOTE_HUMAN
+    in_scope = f"toDate(timestamp) = '{day}' AND " if day else ""
 
     # 1. What is normal for a shared computer?
     rows = steps.run("Learn what is normal", f"""
         SELECT count() AS shared_sources, quantile(0.5)(targets) AS typical, quantile(0.99)(targets) AS p99
         FROM (SELECT src_comp, uniqExact(src_user) AS accounts, uniqExact(dst_comp) AS targets
-              FROM auth_logs WHERE {REMOTE_HUMAN} GROUP BY src_comp HAVING accounts >= {MIN_ACCOUNTS})
+              FROM auth_logs WHERE {remote} GROUP BY src_comp HAVING accounts >= {MIN_ACCOUNTS})
         LIMIT 1""")
     norm = rows[0] if rows else {"shared_sources": 0, "typical": 0, "p99": 0}
     typical, p99 = float(norm["typical"] or 0), float(norm["p99"] or 0)
@@ -105,7 +112,7 @@ def investigate() -> dict:
         SELECT src_comp AS computer, uniqExact(src_user) AS accounts, uniqExact(dst_comp) AS targets,
                count() AS logins, countIf(result = 'Fail') AS failed,
                min(timestamp) AS first_seen, max(timestamp) AS last_seen
-        FROM auth_logs WHERE {REMOTE_HUMAN}
+        FROM auth_logs WHERE {remote}
         GROUP BY src_comp HAVING accounts >= {MIN_ACCOUNTS} AND targets > {threshold:.0f}
         ORDER BY targets DESC LIMIT {MAX_SUSPECTS}""")
     suspects = [dict(r, times_normal=round(r["targets"] / p99, 1) if p99 else None) for r in rows]
@@ -123,7 +130,7 @@ def investigate() -> dict:
         rows = steps.run("Profile the suspect", f"""
             SELECT src_comp AS computer, auth_type, logon_type, result, count() AS logins,
                    uniqExact(src_user) AS accounts, uniqExact(dst_comp) AS targets
-            FROM auth_logs WHERE src_comp IN ({names}) AND {REMOTE_HUMAN}
+            FROM auth_logs WHERE src_comp IN ({names}) AND {remote}
             GROUP BY computer, auth_type, logon_type, result ORDER BY logins DESC LIMIT 20""")
         steps.note("; ".join(f"{r['logins']} {r['result'].lower()} {r['auth_type']} {r['logon_type']} logins "
                              f"with {r['accounts']} accounts to {r['targets']} machines" for r in rows[:4]))
@@ -133,7 +140,7 @@ def investigate() -> dict:
         accounts = steps.run("List accounts that got in", f"""
             SELECT src_user AS account, uniqExact(dst_comp) AS targets, count() AS logins,
                    min(timestamp) AS first_seen, max(timestamp) AS last_seen
-            FROM auth_logs WHERE src_comp IN ({names}) AND {REMOTE_HUMAN} AND result = 'Success'
+            FROM auth_logs WHERE src_comp IN ({names}) AND {remote} AND result = 'Success'
             GROUP BY src_user ORDER BY targets DESC, logins DESC LIMIT 200""")
         steps.note(f"{len(accounts)} accounts logged in successfully from the suspect.")
 
@@ -141,7 +148,7 @@ def investigate() -> dict:
             # 5. Do these accounts normally work from somewhere else?
             rows = steps.run("Check where those accounts normally work", f"""
                 SELECT uniqExact(src_user) AS seen_elsewhere FROM auth_logs
-                WHERE src_user IN ({_in_list(a['account'] for a in accounts)}) AND src_comp NOT IN ({names})
+                WHERE {in_scope}src_user IN ({_in_list(a['account'] for a in accounts)}) AND src_comp NOT IN ({names})
                 LIMIT 1""")
             elsewhere = int(rows[0]["seen_elsewhere"]) if rows else 0
             steps.note(f"{elsewhere} of the {len(accounts)} accounts also log in from other computers, "
@@ -151,7 +158,7 @@ def investigate() -> dict:
         edges = steps.run("Map the machines it reached", f"""
             SELECT src_comp AS source, dst_comp AS target, uniqExact(src_user) AS accounts,
                    count() AS logins, min(timestamp) AS first_seen
-            FROM auth_logs WHERE src_comp IN ({names}) AND {REMOTE_HUMAN} AND result = 'Success'
+            FROM auth_logs WHERE src_comp IN ({names}) AND {remote} AND result = 'Success'
             GROUP BY source, target ORDER BY first_seen LIMIT {MAX_EDGES}""")
         targets_reached = len({e["target"] for e in edges})
         steps.note(f"It logged into {targets_reached} machines successfully.")
@@ -159,7 +166,7 @@ def investigate() -> dict:
         activity = steps.run("Chart its activity through the day", f"""
             SELECT toStartOfInterval(timestamp, INTERVAL 30 MINUTE) AS slot,
                    countIf(result = 'Success') AS succeeded, countIf(result = 'Fail') AS failed
-            FROM auth_logs WHERE src_comp IN ({names}) AND {REMOTE_HUMAN}
+            FROM auth_logs WHERE src_comp IN ({names}) AND {remote}
             GROUP BY slot ORDER BY slot LIMIT 100""")
         busiest = max(activity, key=lambda r: r["succeeded"] + r["failed"]) if activity else None
         if busiest:
@@ -188,6 +195,7 @@ def investigate() -> dict:
     report = report or _template_report(suspects, accounts, targets_reached)
 
     return {
+        "day": day,
         "risk": "high" if suspects else "low",
         "headline": str(report["headline"]),
         "summary": str(report["summary"]),
@@ -203,8 +211,33 @@ def investigate() -> dict:
     }
 
 
+def scan_days() -> dict:
+    """Apply the same outlier test to every day at once: which days have a suspect?"""
+    started = time.time()
+    out = run_sql(" ".join(f"""
+        SELECT day, src_comp AS computer, accounts, targets, p99
+        FROM (SELECT day, src_comp, accounts, targets, quantileExact(0.99)(targets) OVER (PARTITION BY day) AS p99
+              FROM (SELECT toDate(timestamp) AS day, src_comp, uniqExact(src_user) AS accounts,
+                           uniqExact(dst_comp) AS targets
+                    FROM auth_logs WHERE {_REMOTE_HUMAN}
+                    GROUP BY day, src_comp HAVING accounts >= {MIN_ACCOUNTS}))
+        WHERE targets > greatest(1, p99 * {OUTLIER_FACTOR})
+        ORDER BY day, targets DESC LIMIT 500""".split()))
+    by_day = {}
+    for r in out["rows"]:
+        day = str(r["day"])[:10]
+        p99 = float(r["p99"] or 0)
+        by_day.setdefault(day, []).append({
+            "computer": r["computer"], "accounts": r["accounts"], "targets": r["targets"],
+            "times_normal": round(r["targets"] / p99, 1) if p99 else None})
+    return {"suspects_by_day": {d: s[:MAX_SUSPECTS] for d, s in by_day.items()},
+            "sql": out["sql"],
+            "stats": dict(out["stats"], seconds=round(time.time() - started, 1))}
+
+
 if __name__ == "__main__":
-    out = investigate()
+    import sys
+    out = investigate(sys.argv[1] if len(sys.argv) > 1 else None)
     print(out["headline"], "\n")
     print(out["summary"], "\n")
     for a in out["actions"]:

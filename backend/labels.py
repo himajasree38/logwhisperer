@@ -5,6 +5,7 @@ Runs after the agents have answered; nothing here is ever sent to a model.
 import os, time, datetime, threading
 import clickhouse_connect
 from dotenv import load_dotenv
+from backend.db import TABLE
 
 load_dotenv()
 
@@ -24,13 +25,13 @@ def _iso_second(value) -> str:
 def _load():
     client = clickhouse_connect.get_client(
         host=os.getenv("CLICKHOUSE_HOST"),
-        username=os.getenv("CLICKHOUSE_USER"),
-        password=os.getenv("CLICKHOUSE_PASSWORD"),
+        username=os.getenv("CLICKHOUSE_RO_USER"),
+        password=os.getenv("CLICKHOUSE_RO_PASSWORD"),
         secure=True,
         connect_timeout=5,
     )
     result = client.query(
-        "SELECT timestamp, src_user, src_comp, dst_comp FROM auth_logs WHERE is_attack = 1")
+        f"SELECT timestamp, src_user, src_comp, dst_comp FROM {TABLE} WHERE is_attack = 1")
     return [dict(zip(result.column_names, r)) for r in result.result_rows]
 
 def attack_rows() -> list:
