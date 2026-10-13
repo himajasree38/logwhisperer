@@ -280,7 +280,12 @@ export default function App() {
                 Scan all days
               </button>
             )}
-            <button className="btn btn--small btn--accent" onClick={runInvestigation} disabled={busy}>
+            <button
+              className="btn btn--small btn--accent"
+              onClick={runInvestigation}
+              disabled={busy}
+              title="Investigate the day chosen in the Day menu"
+            >
               Investigate{day ? ` ${dayLabel(day)}` : ""}
             </button>
             <button className="btn btn--small" onClick={clearConversation} disabled={!messages.length || busy}>
@@ -315,7 +320,7 @@ export default function App() {
                   <p className="empty__lead">Find the attacker, or ask the logs a question.</p>
                   <p className="empty__sub">
                     {days.length > 1
-                      ? `Scan all ${days.length} days with no hints, investigate one, or hold the mic and ask.`
+                      ? `Scan all ${days.length} days with no hints to see which need a closer look. Or hold the mic and ask.`
                       : "Investigate hunts through the logs with no hints. Or hold the mic and ask."}
                   </p>
                   <div className="empty__actions">
@@ -324,13 +329,11 @@ export default function App() {
                         Scan all {days.length} days
                       </button>
                     )}
-                    <button
-                      className={`btn btn--hero ${days.length > 1 ? "btn--accent" : "btn--send"}`}
-                      onClick={runInvestigation}
-                      disabled={busy}
-                    >
-                      Investigate{day ? ` ${dayLabel(day)}` : ""}
-                    </button>
+                    {days.length <= 1 && (
+                      <button className="btn btn--send btn--hero" onClick={runInvestigation} disabled={busy}>
+                        Run an investigation
+                      </button>
+                    )}
                   </div>
                   <div className="empty__chips">
                     {DEMO_QUESTIONS.map((q) => (

@@ -4,7 +4,7 @@
 
 Point it at 278 million real logins from Los Alamos National Laboratory and click one button. It learns what normal looks like, finds the computer an attacker was working from, lists the accounts they stole, and maps every machine they reached. Then it tells you, in plain English, what to do about it. You can also just ask it questions, by voice or by typing.
 
-![An investigation: the report, its scorecard against the real attack, and the attack map](docs/investigation.png)
+![An investigation: the report, its scorecard against the real attack, and the attack map showing where the stolen accounts normally work, the attack computer, and the machines it reached](docs/investigation.png)
 
 ## Results
 
@@ -52,8 +52,8 @@ It does not catch low-and-slow activity: on nine days the red team made between 
 2. Find computers far outside that norm, using many accounts to reach many machines.
 3. Profile the suspect: successes, failures, login types.
 4. List the accounts that got in. Their passwords are probably stolen.
-5. Check that those accounts normally work from other machines.
-6. Map where the suspect got in, in order.
+5. Find the computer each of those accounts normally works from.
+6. Map where the suspect got in, in order, alongside the usual computers of the accounts it used.
 7. Chart its activity through the day.
 
 The model writes the report from these findings. It does not decide them, so the findings are identical on every run.

@@ -38,6 +38,7 @@ Return ONLY JSON:
   "accounts_whose_usual_computer_is_elsewhere" means those accounts normally work from other machines,
   which suggests their passwords were stolen; it does not mean the attack moved to other machines.
   Write dates in words, for example "8 October".
+  "top_accounts" are accounts that got in. Name them only when talking about accounts that got in.
   Give the counts as they are. Do not write "most", "nearly all" or "few" unless the numbers support it.
   "times_normal" compares the suspect with other shared computers on the network, not with its own past.
 - "actions": up to 4 concrete actions in priority order, naming the specific computer and how many accounts.
@@ -122,7 +123,7 @@ def investigate(day: str = None) -> dict:
     else:
         steps.note(f"No shared computer reached more than {threshold:.0f} machines.")
 
-    accounts, edges, activity, targets_reached, elsewhere = [], [], [], 0, 0
+    accounts, edges, activity, homes, targets_reached, elsewhere = [], [], [], [], 0, 0
     if suspects:
         names = _in_list(s["computer"] for s in suspects)
 
@@ -145,14 +146,21 @@ def investigate(day: str = None) -> dict:
         steps.note(f"{len(accounts)} accounts logged in successfully from the suspect.")
 
         if accounts:
-            # 5. Do these accounts normally work from somewhere else?
-            rows = steps.run("Check where those accounts normally work", f"""
-                SELECT uniqExact(src_user) AS seen_elsewhere FROM auth_logs
-                WHERE {in_scope}src_user IN ({_in_list(a['account'] for a in accounts)}) AND src_comp NOT IN ({names})
-                LIMIT 1""")
-            elsewhere = int(rows[0]["seen_elsewhere"]) if rows else 0
-            steps.note(f"{elsewhere} of the {len(accounts)} accounts also log in from other computers, "
-                       f"so the suspect is not their usual machine.")
+            # 5. Where do these accounts normally work? The computer each one logs in from
+            #    most, other than the suspect, is taken as its usual machine.
+            homes = steps.run("Find where those accounts normally work", f"""
+                SELECT account, home, logins FROM (
+                    SELECT src_user AS account, src_comp AS home, count() AS logins FROM auth_logs
+                    WHERE {in_scope}src_user IN ({_in_list(a['account'] for a in accounts)})
+                      AND src_comp NOT IN ({names})
+                    GROUP BY account, home ORDER BY logins DESC LIMIT 1 BY account)
+                ORDER BY logins DESC LIMIT 500""")
+            usual = {h["account"]: h["home"] for h in homes}
+            for account in accounts:
+                account["usual_computer"] = usual.get(account["account"])
+            elsewhere = len(usual)
+            steps.note(f"{elsewhere} of the {len(accounts)} accounts normally log in from another computer "
+                       f"({len(set(usual.values()))} different ones), so the suspect is not their usual machine.")
 
         # 6. Where did it get in, and when?
         edges = steps.run("Map the machines it reached", f"""
@@ -203,6 +211,7 @@ def investigate(day: str = None) -> dict:
         "report_written_by_model": written_by_model,
         "suspects": suspects,
         "accounts": accounts,
+        "homes": homes,
         "edges": edges,
         "activity": activity,
         "steps": steps.steps,

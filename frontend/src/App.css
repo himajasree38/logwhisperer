@@ -260,12 +260,19 @@
 .viz__note { flex-basis: 100%; }
 .key { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: 0; }
 .key--suspect { background: var(--high); }
+/* Usual computers are neutral squares: told apart by shape and position, not by another hue. */
+.key--home { background: var(--muted); border-radius: 2px; }
 .key--target, .key--s1 { background: var(--series-1); }
 .key--s2 { background: var(--series-2); }
 
 .map, .chart { position: relative; }
 .map svg, .chart svg { display: block; width: 100%; height: auto; }
-.map svg { max-height: 460px; }
+.map svg { max-height: 470px; }
+.map__theft { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 4; opacity: 0.55; }
+.map__home { fill: var(--muted); stroke: var(--panel); stroke-width: 1.5; }
+.map__home.is-waiting { fill: var(--panel); stroke: var(--muted); }
+.map__home.is-hover { stroke: var(--text); stroke-width: 2; }
+.map__caption { fill: var(--muted); font-size: 12px; }
 .map__edge { stroke: var(--series-1); stroke-width: 1; opacity: 0.22; }
 .map__node { fill: var(--series-1); stroke: var(--panel); stroke-width: 1.5; transition: r 0.12s; }
 .map__node.is-hover { stroke: var(--text); stroke-width: 2; }

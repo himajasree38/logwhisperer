@@ -47,7 +47,7 @@ export default function InvestigationPanel({ data, onScan }) {
 
       {view === "map" && (
         <>
-          <AttackMap suspects={data.suspects} edges={data.edges} />
+          <AttackMap suspects={data.suspects} edges={data.edges} accounts={data.accounts} homes={data.homes} />
           <ActivityChart activity={data.activity} name={name} />
         </>
       )}
